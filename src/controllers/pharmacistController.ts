@@ -2,7 +2,6 @@ import bcrypt from "bcryptjs";
 import PharmacistModel from "../models/pharmacistModel.ts";
 import { generateHmsId } from "../utils/generateId.ts";
 import jwt from "jsonwebtoken";
-import PrescriptionModel from "../models/prescriptionModel.ts";
 
 const JWT_SECRET: string = process.env.JWT_SECRET || "defaultsecret";
 
@@ -40,13 +39,14 @@ export const registerPharmacistController = async (req, res) => {
         fullName: newPharmacist.fullName,
         email: newPharmacist.email,
         phoneNo: newPharmacist.phoneNo,
+        role: newPharmacist.role,
       },
     };
     const token = jwt.sign(payload, JWT_SECRET);
     res.status(201).json({
       success: true,
       message: "Pharmacist registered successfully",
-      pharmacist: {
+      user: {
         id: newPharmacist._id,
         id_no: newPharmacist.id_no,
         fullName: newPharmacist.fullName,
@@ -98,6 +98,7 @@ export const loginPharmacistController = async (req, res) => {
         fullName: pharmacist.fullName,
         email: pharmacist.email,
         phoneNo: pharmacist.phoneNo,
+        role: pharmacist.role,
       },
     };
 
@@ -106,7 +107,7 @@ export const loginPharmacistController = async (req, res) => {
     res.status(200).json({
       success: true,
       message: "Pharmacist logged in successfully",
-      pharmacist: {
+      user: {
         id: pharmacist._id,
         id_no: pharmacist.id_no,
         fullName: pharmacist.fullName,

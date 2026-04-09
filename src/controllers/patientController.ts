@@ -72,7 +72,7 @@ export const patientRegisterController = async (req, res): Promise<any> => {
     res.status(201).json({
       success: true,
       message: "Patient registered successfully",
-      patient: {
+      user: {
         id: newPatient._id,
         fullName: newPatient.fullName,
         email: newPatient.email,
@@ -146,7 +146,7 @@ export const patientLoginController = async (req, res): Promise<any> => {
     res.status(200).json({
       success: true,
       message: `${user.role.charAt(0).toUpperCase() + user.role.slice(1)} login successful`,
-      patient: {
+      user: {
         id: user._id,
         id_no: user.id_no,
         fullName: user.fullName,
@@ -191,85 +191,6 @@ export const fetchRelatedDoctorsController = async (req, res) => {
   }
 };
 
-export const markAsReadNotificationController = async (req, res) => {
-  try {
-    const { notificationId } = req.params;
-    const not = await NotificationModel.findById(notificationId);
-    if (!not) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Notification not found!" });
-    }
-    not.isRead = true;
-    await not.save();
-    return res.status(200).json({
-      success: true,
-      message: "Notification marked as read.",
-      notification: not,
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Internal Server Error",
-      error,
-    });
-  }
-};
-
-export const markALLAsReadNotificationController = async (req, res) => {
-  try {
-    const patientId = req.user.patient.id;
-
-    const result = await NotificationModel.updateMany(
-      { userId: patientId, isRead: false },
-      { isRead: true },
-    );
-
-    if (result.matchedCount === 0) {
-      return res
-        .status(404)
-        .json({ success: false, message: "No unread notifications found!" });
-    }
-
-    const updatedNots = await NotificationModel.find({ userId: patientId });
-
-    return res.status(200).json({
-      success: true,
-      message: `${result.modifiedCount} notification(s) marked as read.`,
-      notifications: updatedNots,
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Internal Server Error",
-      error,
-    });
-  }
-};
-
-export const deleteNotificationController = async (req, res) => {
-  try {
-    const { notificationId } = req.params;
-    const not = await NotificationModel.findByIdAndDelete(notificationId);
-
-    if (!not) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Notification not found!" });
-    }
-
-    return res
-      .status(200)
-      .json({ success: true, message: "Notification deleted successfully." });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Internal Server Error",
-      error,
-    });
-  }
-};
-
 export const getPatientMedicalRecordController = async (req, res) => {
   try {
     const patientId = req.user.patient.id;
@@ -293,20 +214,21 @@ export const getPatientMedicalRecordController = async (req, res) => {
     const [appointments, consultations, prescriptions, labOrders] =
       await Promise.all([
         AppointmentModel.find({ patientId })
-          .populate("doctorId", "fullName id_no")
+          .populate("doctorId", "fullName photo id_no")
           .populate("departmentId", "name")
           .sort({ createdAt: -1 }),
 
         ConsultationModel.find({ patientId })
-          .populate("doctorId", "fullName")
+          .populate("doctorId", "fullName photo id_no")
           .sort({ createdAt: -1 }),
 
         PrescriptionModel.find({ patientId })
-          .populate("doctorId", "fullName")
+          .populate("doctorId", "fullName photo id_no")
+          .populate("dispensedBy", "fullName photo id_no")
           .sort({ createdAt: -1 }),
 
         LabOrderModel.find({ patientId })
-          .populate("doctorId", "fullName")
+          .populate("doctorId", "fullName photo id_no")
           .sort({ createdAt: -1 }),
       ]);
 
@@ -351,7 +273,7 @@ export const getPatientMedicalRecordController = async (req, res) => {
       _id: pres._id,
       id_no: pres.id_no,
       date: pres.createdAt,
-      doctor: pres.doctorId?.fullName || "N/A",
+      doctor: pres.doctorId || "N/A",
       medicines: pres.medicines.map((med) => ({
         name: med.medicineName,
         dosage: med.dosage,
@@ -363,6 +285,8 @@ export const getPatientMedicalRecordController = async (req, res) => {
       })),
       status: pres.status,
       resultPDF: pres.resultPDF,
+      dispensedBy: pres.dispensedBy,
+      dispensedAt: pres.dispensedAt,
     }));
 
     const formattedLabTests = labOrders.flatMap((order) =>

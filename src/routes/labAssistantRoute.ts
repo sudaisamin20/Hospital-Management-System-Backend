@@ -4,6 +4,7 @@ import {
   fetchLabOrdersByDepartment,
   fetchPatientAllTestReportsController,
   loginLabAssistantController,
+  markAsSeenLabOrdersController,
   registerLabAssistantController,
   searchLabtestSuggestionsController,
   startTestController,
@@ -19,7 +20,7 @@ router.post(
   upload.single("photo"),
   registerLabAssistantController,
 );
-router.post("/auth/login/lab-assistant", loginLabAssistantController);
+router.post("/auth/login", loginLabAssistantController);
 router.get(
   "/fetch/all-tests/:departmentId",
   requiredAuthMiddleware,
@@ -41,6 +42,11 @@ router.put(
   "/delete-lab-order",
   requiredAuthMiddleware,
   deleteLabOrderController,
+);
+router.put(
+  "/mark-as-seen",
+  requiredAuthMiddleware,
+  markAsSeenLabOrdersController,
 );
 
 export default router;

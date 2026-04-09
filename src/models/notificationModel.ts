@@ -44,9 +44,24 @@ const notificationSchema = new mongoose.Schema({
   // Notification type: appointment, lab, prescription, etc
   notificationType: {
     type: String,
-    enum: ["appointment", "lab", "prescription", "general"],
+    enum: [
+      "appointment",
+      "lab",
+      "prescription",
+      "general",
+      "appointment_confirmed",
+      "appointment_cancelled",
+      "appointment_completed",
+      "lab_test",
+    ],
     default: "general",
   },
+  seenBy: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
+  ],
   createdAt: {
     type: Date,
     default: Date.now,

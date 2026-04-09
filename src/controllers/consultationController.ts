@@ -5,6 +5,8 @@ import PrescriptionModel from "../models/prescriptionModel.ts";
 import { generateHmsId } from "../utils/generateId.ts";
 import { v4 as uuidv4 } from "uuid";
 import { generatePDF } from "../utils/generatePDF.ts";
+import { io } from "../index.ts";
+import NotificationModel from "../models/notificationModel.ts";
 
 interface IReqData {
   aptId: string;
@@ -50,6 +52,8 @@ interface IReqData {
 export const createConsultationController = async (req, res) => {
   try {
     const reqData = req.body as IReqData;
+
+    // 1. Create consultation first
     const newCons = new ConsultationModel({
       appointmentId: reqData.aptId,
       doctorId: reqData.doctorId,
@@ -72,15 +76,16 @@ export const createConsultationController = async (req, res) => {
 
     await newCons.save();
 
+    // 2. Create prescription if medicines exist
+    let presId = null;
     if (reqData.consultationData?.medicines?.length > 0) {
       const filteredMeds = reqData.consultationData.medicines.filter(
         (med) => med.medicineName && med.medicineName.trim() !== "",
       );
 
-      const PRES_id_no = generateHmsId("PRES", 5);
-
       if (filteredMeds.length > 0) {
-        await PrescriptionModel.create({
+        const PRES_id_no = generateHmsId("PRES", 5);
+        const newPres = await PrescriptionModel.create({
           id_no: PRES_id_no,
           consultationId: newCons._id,
           appointmentId: reqData.aptId,
@@ -88,9 +93,12 @@ export const createConsultationController = async (req, res) => {
           patientId: reqData.patientId,
           medicines: filteredMeds,
         });
+        presId = newPres._id;
+        io.to(`pharmacists`).emit("notification");
       }
     }
 
+    // 3. Create lab tests if they exist
     if (reqData.consultationData?.labTests?.length > 0) {
       const filteredTests = reqData.consultationData.labTests
         .filter((test) => test.testName && test.testName.trim() !== "")
@@ -98,9 +106,9 @@ export const createConsultationController = async (req, res) => {
           ...test,
           id_no: generateHmsId("LBTST", 5),
         }));
-      const LBORD_id_no = generateHmsId("LBORD", 5);
 
       if (filteredTests.length > 0) {
+        const LBORD_id_no = generateHmsId("LBORD", 5);
         await LabOrderModel.create({
           id_no: LBORD_id_no,
           consultationId: newCons._id,
@@ -109,89 +117,128 @@ export const createConsultationController = async (req, res) => {
           patientId: reqData.patientId,
           tests: filteredTests,
         });
+        io.to(`labAssistants`).emit("notification");
       }
     }
 
-    const apt = await AppointmentModel.findById(reqData.aptId);
+    const apt = await AppointmentModel.findById(reqData.aptId)
+      .populate("doctorId", "fullName photo id_no email")
+      .populate("patientId", "fullName id_no email");
 
-    if (!apt) {
-      return res
-        .status(404)
-        .json({ success: true, message: "Appointment not founded" });
+    if (apt) {
+      apt.status = "Completed";
+      apt.completedAt = Date.now();
+      await apt.save();
     }
 
-    apt.status = "Completed";
-    apt.completedAt = Date.now();
-    await apt.save();
+    const now = new Date();
+    const time = now.toLocaleTimeString("en-US", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    const date = now.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+    const not = await NotificationModel.create({
+      userId: apt?.patientId?._id,
+      title: "Appointment Completed",
+      message: `Your appointment completed with Dr. ${apt?.doctorId?.fullName} on ${date} at ${time}.`,
+      notificationType: "appointment_completed",
+      aptId: apt?._id,
+    });
+    const patNot = await NotificationModel.findById(not._id).populate({
+      path: "aptId",
+      populate: [
+        { path: "departmentId", select: "name" },
+        { path: "specialistId", select: "name" },
+        { path: "doctorId", select: "fullName photo id_no" },
+        { path: "patientId", select: "fullName photo id_no email phoneNo" },
+      ],
+    });
+    io.to(`patient_${apt?.patientId?._id}`).emit("newNotification", {
+      patNot,
+    });
+    io.to(`patient_${apt?.patientId?._id}`).emit("notification");
 
-    const consult = await ConsultationModel.findById(newCons._id)
-      .populate("appointmentId", "id_no")
-      .populate(
-        "doctorId",
-        "id_no fullName phoneNo specialization email licenseNo photo",
-      )
-      .populate(
-        "patientId",
-        "id_no fullName phoneNo email dob gender phoneNo reasonForVisit",
+    // 5. Try to generate PDF (non-blocking - won't prevent consultation from being created)
+    try {
+      const consult = await ConsultationModel.findById(newCons._id)
+        .populate("appointmentId", "id_no")
+        .populate(
+          "doctorId",
+          "id_no fullName phoneNo specialization email licenseNo photo",
+        )
+        .populate(
+          "patientId",
+          "id_no fullName phoneNo email dob gender phoneNo reasonForVisit",
+        );
+
+      const pres = await PrescriptionModel.findOne({
+        consultationId: consult?._id,
+      });
+      const medicines = pres?.medicines ? [...pres.medicines] : [];
+      const uniqueFileName = uuidv4();
+
+      const patientDOB = new Date(consult?.patientId?.dob);
+      const today = new Date();
+      const age = Math.floor(
+        (today.getTime() - patientDOB.getTime()) /
+          (365.25 * 24 * 60 * 60 * 1000),
       );
 
-    const pres = await PrescriptionModel.findOne({
-      consultationId: consult?._id,
-    });
-    const medicines = pres?.medicines ? [...pres.medicines] : [];
-    const uniqueFileName = uuidv4();
+      const pdfFile = await generatePDF(
+        "prescription",
+        {
+          appointment: consult?.appointmentId.id_no,
+          patientName: consult?.patientId.fullName,
+          patientId: consult?.patientId.id_no,
+          patientAge: age,
+          patientGender: consult?.patientId.gender || "N/A",
+          patientContact: consult?.patientId.phoneNo,
+          doctorName: consult?.doctorId.fullName,
+          doctorSpecialization: consult?.doctorId.specialization,
+          doctorLicense: consult?.doctorId.licenseNo,
+          medicines: medicines,
+          prescriptionId: pres?.id_no,
+          vitalSigns: consult?.vitals,
+          diagnosis: consult?.diagnosis,
+          symptoms: consult?.symptoms,
+          followUp: consult?.followUp,
+          additionalNotes: consult?.additionalNotes,
+          date: new Date().toLocaleString("en-US", {
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: true,
+          }),
+        },
+        uniqueFileName,
+      );
 
-    const patientDOB = new Date(consult?.patientId?.dob);
-    const today = new Date();
-    const age = Math.floor(
-      (today.getTime() - patientDOB.getTime()) / (365.25 * 24 * 60 * 60 * 1000),
-    );
-
-    const pdfFile = await generatePDF(
-      "prescription",
-      {
-        appointment: consult?.appointmentId.id_no,
-        patientName: consult?.patientId.fullName,
-        patientId: consult?.patientId.id_no,
-        patientAge: age,
-        patientGender: consult?.patientId.gender || "N/A",
-        patientContact: consult?.patientId.phoneNo,
-        doctorName: consult?.doctorId.fullName,
-        doctorSpecialization: consult?.doctorId.specialization,
-        doctorLicense: consult?.doctorId.licenseNo,
-        medicines: medicines,
-        prescriptionId: pres?.id_no,
-        vitalSigns: consult?.vitals,
-        diagnosis: consult?.diagnosis,
-        symptoms: consult?.symptoms,
-        followUp: consult?.followUp,
-        additionalNotes: consult?.additionalNotes,
-        date: new Date().toLocaleString("en-US", {
-          year: "numeric",
-          month: "long",
-          day: "numeric",
-          hour: "2-digit",
-          minute: "2-digit",
-          hour12: true,
-        }),
-      },
-      uniqueFileName,
-    );
-
-    if (pres && consult) {
-      pres.resultPDF = pdfFile;
-      consult.resultPDF = pdfFile;
-      await pres.save();
-      await consult.save();
+      // Only update PDF if generation succeeded
+      if (pdfFile && pres && consult) {
+        pres.resultPDF = pdfFile;
+        consult.resultPDF = pdfFile;
+        await pres.save();
+        await consult.save();
+      }
+    } catch (pdfError) {
+      console.error("PDF generation error (non-blocking):", pdfError);
+      // Continue without PDF - the consultation is already created
     }
 
     return res.status(201).json({
       success: true,
-      messsage: "Appointment Completed!",
+      message: "Appointment Completed!",
       apt,
       newCons,
     });
   } catch (error) {
+    console.error("Error creating consultation:", error);
     res.status(500).json({
       success: false,
       message: "Internal Server Error",

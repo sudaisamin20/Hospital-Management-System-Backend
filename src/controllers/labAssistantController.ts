@@ -7,6 +7,7 @@ import TestModel from "../models/testModel.ts";
 import NotificationModel from "../models/notificationModel.ts";
 import { generatePDF } from "../utils/generatePDF.ts";
 import { v4 as uuidv4 } from "uuid";
+import { io } from "../index.ts";
 
 const JWT_SECRET: string = process.env.JWT_SECRET || "defaultsecret";
 
@@ -65,6 +66,7 @@ export const registerLabAssistantController = async (req, res) => {
         fullName: newLabAssistant.fullName,
         email: newLabAssistant.email,
         phoneNo: newLabAssistant.phoneNo,
+        role: newLabAssistant.role,
         departmentId: newLabAssistant.departmentId,
       },
     };
@@ -127,6 +129,7 @@ export const loginLabAssistantController = async (req, res) => {
         fullName: labAssistant.fullName,
         email: labAssistant.email,
         phoneNo: labAssistant.phoneNo,
+        role: labAssistant.role,
         departmentId: labAssistant.departmentId,
       },
     };
@@ -136,7 +139,7 @@ export const loginLabAssistantController = async (req, res) => {
     res.status(200).json({
       success: true,
       message: "Lab Assistant logged in successfully",
-      labAssistant: {
+      user: {
         id: labAssistant._id,
         id_no: labAssistant.id_no,
         fullName: labAssistant.fullName,
@@ -251,6 +254,30 @@ export const startTestController = async (req, res) => {
 
     test.status = status;
     await labOrder.save();
+
+    const patNot = await NotificationModel.create({
+      userId: labOrder.patientId,
+      title: "Lab Test Started",
+      message: `Your lab test "${test.testName}" has started. Test ID: ${test.id_no}. Please wait for the results.`,
+      notificationType: "lab_test",
+      labOrder: {
+        labOrderId: labOrder._id,
+        testName: test.testName,
+        testId: test.id_no,
+        status: test.status,
+      },
+      createdAt: new Date(),
+    });
+
+    io.to(`patient_${labOrder.patientId}`).emit("notification");
+
+    io.to(`patient_${labOrder.patientId}`).emit("newNotification", {
+      patNot,
+    });
+
+    io.to(`patient_${labOrder.patientId}`).emit("labTestStart", {
+      test,
+    });
 
     res.status(200).json({
       success: true,
@@ -369,11 +396,11 @@ export const submitTestResultController = async (req, res) => {
     await labOrder.save();
 
     // Create notification for patient with complete lab test details
-    await NotificationModel.create({
+    const patNot = await NotificationModel.create({
       userId: labOrder.patientId._id,
       title: "Lab Test Completed",
       message: `Your ${test.testName} test report is ready. ID: ${test.id_no}`,
-      notificationType: "lab",
+      notificationType: "lab_test",
       labOrder: {
         labOrderId: labOrder._id,
         testName: test.testName,
@@ -385,6 +412,38 @@ export const submitTestResultController = async (req, res) => {
         completedAt: test.completedAt,
       },
       createdAt: new Date(),
+    });
+
+    io.to(`patient_${labOrder.patientId._id}`).emit("notification");
+    io.to(`patient_${labOrder.patientId._id}`).emit("newNotification", {
+      patNot,
+    });
+    io.to(`patient_${labOrder.patientId._id}`).emit("labTestResultSubmit", {
+      test,
+    });
+
+    const docNot = await NotificationModel.create({
+      userId: labOrder.doctorId._id,
+      title: "Lab Test Completed",
+      message: `Lab test completed for ${labOrder.patientId.fullName}. The test is ${test.testName} and Test ID is ${test.id_no}`,
+      notificationType: "lab_test",
+      labOrder: {
+        labOrderId: labOrder._id,
+        testName: test.testName,
+        testId: test.id_no,
+        status: test.status,
+        results: test.results,
+        remarks: test.remarks,
+        resultPDF: test.resultPDF,
+        completedAt: test.completedAt,
+      },
+      createdAt: new Date(),
+    });
+
+    io.to(`patient_${labOrder.doctorId._id}`).emit("notification");
+
+    io.to(`patient_${labOrder.doctorId._id}`).emit("newNotification", {
+      docNot,
     });
 
     res.status(200).json({
@@ -448,7 +507,7 @@ export const deleteLabOrderController = async (req, res) => {
       role,
       hiddenAt: Date.now(),
     });
-    await labOrder.save();
+    await labOrder?.save();
     return res.status(201).json({
       success: true,
       message: "Lab order deleted successfully",
@@ -460,6 +519,32 @@ export const deleteLabOrderController = async (req, res) => {
       success: false,
       message: "Internal Server Error",
       error: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+};
+
+export const markAsSeenLabOrdersController = async (req, res) => {
+  try {
+    const userId =
+      req.user?.user?.id || req.user?.labAssistant?.id || req.user?.patient?.id;
+    await LabOrderModel.updateMany(
+      {
+        seenBy: { $ne: userId },
+        "tests.status": "Completed",
+      },
+      {
+        $addToSet: { seenBy: userId },
+      },
+    );
+    return res.status(200).json({
+      success: true,
+      message: "Lab orders marked as viewed successfully!",
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+      error,
     });
   }
 };

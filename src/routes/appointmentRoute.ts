@@ -9,11 +9,15 @@ import {
   fetchPatientAllAptsController,
   getAllAppointmentsController,
   getAllPatientNotificationsController,
+  getAllUnreadCountsController,
   getDoctorAppointmentsController,
   getResReqsAptsController,
+  markAsSeenAppointmentsController,
   requestrescheduleController,
   rescheduleAptDateController,
+  setStartedAptTimeController,
 } from "../controllers/appointmentController.ts";
+import { requiredAuthMiddleware } from "../middlewares/requiredTokenMiddleware.ts";
 
 const router = express.Router();
 
@@ -41,5 +45,22 @@ router.put("/approve-reschedule", approveResReqController);
 router.get("/fetch/doctor-appointments/:id", getDoctorAppointmentsController);
 router.put("/request-reschedule", requestrescheduleController);
 router.get("/fetch/reschedule-requests", getResReqsAptsController);
+router.put(
+  "/set-start-time",
+  requiredAuthMiddleware,
+  setStartedAptTimeController,
+);
+
+// Controlled by many
+router.get(
+  "/fetch/unread-count",
+  requiredAuthMiddleware,
+  getAllUnreadCountsController,
+);
+router.put(
+  "/mark-as-seen",
+  requiredAuthMiddleware,
+  markAsSeenAppointmentsController,
+);
 
 export default router;

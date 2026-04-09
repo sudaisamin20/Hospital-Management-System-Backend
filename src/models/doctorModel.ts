@@ -10,7 +10,7 @@ export interface IDoctor extends mongoose.Document {
   role: string;
   licenseNo: string;
   specialization: string;
-  departmentId: string;
+  // departmentId: string;
   yearsOfExperience: string;
   qualification: string;
   salary: string;
@@ -18,7 +18,7 @@ export interface IDoctor extends mongoose.Document {
   doj: string;
   dob: string;
   maritalStatus: string;
-  specialistId: string;
+  // specialistId: string;
   emergencyNo: string;
   address: string;
   isActive: boolean;

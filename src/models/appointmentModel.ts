@@ -40,9 +40,11 @@ const appointmentSchema = new mongoose.Schema({
   },
   handleBy: { type: mongoose.Schema.Types.ObjectId, ref: "receptionist" },
   confirmedAt: { type: Date },
+  startedAt: { type: Date },
   completedAt: { type: Date },
   cancelledAt: { type: Date },
   createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now },
   hiddenFor: [
     {
       role: {
@@ -96,6 +98,12 @@ const appointmentSchema = new mongoose.Schema({
     ref: "receptionist",
   },
   rescheduledAt: { type: Date },
+  seenBy: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
+  ],
 });
 
 const AppointmentModel = mongoose.model("Appointments", appointmentSchema);

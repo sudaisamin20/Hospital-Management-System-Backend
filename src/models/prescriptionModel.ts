@@ -72,6 +72,12 @@ const prescriptionSchema = new mongoose.Schema(
     resultPDF: {
       type: String,
     },
+    seenBy: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
   },
 
   { timestamps: true },

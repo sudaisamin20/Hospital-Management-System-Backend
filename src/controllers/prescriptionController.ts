@@ -1,3 +1,4 @@
+import { io } from "../index.ts";
 import DispenseModel from "../models/dispenseModel.ts";
 import MedicineModel from "../models/medicineModel.ts";
 import NotificationModel from "../models/notificationModel.ts";
@@ -67,9 +68,9 @@ export const dispenseMedicineController = async (req, res) => {
     const pharmacistId = req.user.pharmacist.id;
 
     // 1️⃣ Find Prescription
-    const prescription = await PrescriptionModel.findById(
-      prescriptionId,
-    ).populate("medicines.medicineId");
+    const prescription = await PrescriptionModel.findById(prescriptionId)
+      .populate("medicines.medicineId")
+      .populate("patientId", "id_no fullName");
 
     if (!prescription) {
       return res.status(404).json({
@@ -153,7 +154,7 @@ export const dispenseMedicineController = async (req, res) => {
     prescription.dispensedAt = new Date();
     await prescription.save();
 
-    await NotificationModel.create({
+    const patNot = await NotificationModel.create({
       userId: prescription.patientId,
       title: "Prescription Dispensed",
       message: `Your prescription for ${prescription.medicines
@@ -179,6 +180,47 @@ export const dispenseMedicineController = async (req, res) => {
       },
       createdAt: new Date(),
     });
+
+    const docNot = await NotificationModel.create({
+      userId: prescription.doctorId,
+      title: "Prescription Dispensed",
+      message: `Prescription dispensed for ${prescription.patientId.fullName}.`,
+      notificationType: "prescription",
+      prescription: {
+        prescriptionId: prescription.id_no,
+        status: "Dispensed",
+        medicines: prescription.medicines.map((m) => ({
+          medicineName: m.medicineName,
+          dosage: m.dosage,
+          frequency: m.frequency,
+          duration: m.duration,
+          note: m.instructions,
+        })),
+        totalAmount: totalAmount,
+        resultPDF: prescription?.resultPDF,
+        dispensedAt: new Date(),
+      },
+      createdAt: new Date(),
+    });
+
+    io.to(`patient_${prescription.patientId._id}`).emit("newNotification", {
+      patNot,
+    });
+
+    io.to(`doctor_${prescription.doctorId}`).emit("newNotification", {
+      docNot,
+    });
+
+    io.to(`patient_${prescription.patientId._id}`).emit("notification");
+
+    io.to(`doctor_${prescription.doctorId}`).emit("notification");
+
+    io.to(`patient_${prescription.patientId._id}`).emit(
+      "prescriptionDispensed",
+      {
+        prescription,
+      },
+    );
 
     res.status(200).json({
       success: true,
@@ -283,6 +325,32 @@ export const getPatientAllPrescriptionsController = async (req, res) => {
       success: true,
       message: "Prescriptions fetched!",
       prescriptions,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+      error,
+    });
+  }
+};
+
+export const markAsSeenPrescriptionsController = async (req, res) => {
+  try {
+    const userId =
+      req.user?.user?.id || req.user?.pharmacist?.id || req.user?.patient?.id;
+    await PrescriptionModel.updateMany(
+      {
+        seenBy: { $ne: userId },
+        status: "Dispensed",
+      },
+      {
+        $addToSet: { seenBy: userId },
+      },
+    );
+    return res.status(200).json({
+      success: true,
+      message: "Prescriptions marked as viewed successfully!",
     });
   } catch (error) {
     res.status(500).json({

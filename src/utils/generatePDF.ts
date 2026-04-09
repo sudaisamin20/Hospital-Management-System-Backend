@@ -49,20 +49,21 @@ export const generatePDF = async (
   templateName: string,
   data: IPDFData,
   fileName: string,
-): Promise<string> => {
+): Promise<string | null> => {
+  let browser = null;
   try {
     // Ensure PDF directory exists
     const pdfDir = path.join(process.cwd(), "src/public/images/pdfs");
     if (!fs.existsSync(pdfDir)) {
       fs.mkdirSync(pdfDir, { recursive: true });
     }
-    console.log(data.medicines);
+
     const templatePath = path.join(
       process.cwd(),
       "src/templates",
       `${templateName}.ejs`,
     );
-    console.log(process.cwd());
+
     if (!fs.existsSync(templatePath)) {
       throw new Error(`Template not found at ${templatePath}`);
     }
@@ -70,14 +71,33 @@ export const generatePDF = async (
     // Render EJS template with data
     const html = await ejs.renderFile(templatePath, data);
 
-    // Launch Puppeteer browser
-    const browser = await puppeteer.launch({
+    // Launch Puppeteer browser with optimized settings
+    browser = await puppeteer.launch({
       headless: "new",
-      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-gpu",
+        "--disable-web-resources",
+      ],
+      timeout: 30000,
     });
 
     const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: "networkidle0" });
+
+    // Set content with shorter timeout and fallback
+    try {
+      await page.setContent(html, {
+        waitUntil: "domcontentloaded",
+        timeout: 15000,
+      });
+    } catch (contentError) {
+      console.warn(
+        "Content load timeout, proceeding with partial render:",
+        contentError.message,
+      );
+      // Continue anyway - some content may have loaded
+    }
 
     const pdfPath = path.join(pdfDir, `${fileName}.pdf`);
 
@@ -86,14 +106,22 @@ export const generatePDF = async (
       format: "A4",
       printBackground: true,
       margin: { top: 10, right: 10, bottom: 10, left: 10 },
+      timeout: 30000,
     });
 
-    await browser.close();
-
+    await page.close();
     console.log(`PDF generated successfully at ${pdfPath}`);
     return `${fileName}.pdf`;
   } catch (error) {
     console.error("Error generating PDF:", error);
-    throw error;
+    return null; // Return null instead of throwing
+  } finally {
+    if (browser) {
+      try {
+        await browser.close();
+      } catch (closeError) {
+        console.error("Error closing browser:", closeError);
+      }
+    }
   }
 };

@@ -67,8 +67,8 @@ export const registerReceptionistController = async (
 
     const token = jwt.sign(payload, JWT_SECRET);
 
-    res.send({
-      newRec: {
+    res.status(200).json({
+      user: {
         id: newRec._id,
         id_no: newRec.id_no,
         fullName: newRec.fullName,
@@ -127,20 +127,21 @@ export const loginReceptionistController = async (req, res) => {
       });
     }
 
-    const token = jwt.sign(
-      {
+    const payload = {
+      user: {
         id: receptionist._id,
         id_no: receptionist.id_no,
         email: receptionist.email,
         role: receptionist.role,
       },
-      JWT_SECRET,
-    );
+    };
+
+    const token = jwt.sign(payload, JWT_SECRET);
 
     res.status(200).json({
       success: true,
       message: `${receptionist.role.charAt(0).toUpperCase() + receptionist.role.slice(1)} login successful`,
-      receptionist: {
+      user: {
         id: receptionist._id,
         id_no: receptionist.id_no,
         fullName: receptionist.fullName,

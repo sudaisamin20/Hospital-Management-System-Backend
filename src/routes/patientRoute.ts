@@ -2,18 +2,16 @@ import express from "express";
 import {
   changePasswordController,
   changeProfilePhotoController,
-  deleteNotificationController,
   fetchRelatedDoctorsController,
   getPatientMedicalRecordController,
   getPatientProfileDetails,
-  markALLAsReadNotificationController,
-  markAsReadNotificationController,
   patientLoginController,
   patientRegisterController,
   updatePatientProfileController,
 } from "../controllers/patientController.ts";
 import { requiredAuthMiddleware } from "../middlewares/requiredTokenMiddleware.ts";
 import upload from "../middlewares/multerMiddleware.ts";
+import { markALLAsReadNotificationController } from "../controllers/NotificationController.ts";
 
 const router = express.Router();
 
@@ -23,21 +21,13 @@ router.get(
   "/fetch/related-doctors/:departmentId/:specialistId",
   fetchRelatedDoctorsController,
 );
-router.put(
-  "/notification/mark-read/:notificationId",
-  requiredAuthMiddleware,
-  markAsReadNotificationController,
-);
+
 router.put(
   "/notification/mark-all-read",
   requiredAuthMiddleware,
   markALLAsReadNotificationController,
 );
-router.delete(
-  "/notification/delete/:notificationId",
-  requiredAuthMiddleware,
-  deleteNotificationController,
-);
+
 router.get(
   "/medical-records",
   requiredAuthMiddleware,

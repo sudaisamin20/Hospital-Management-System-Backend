@@ -70,6 +70,12 @@ const labOrderSchema = new mongoose.Schema(
         hiddenAt: { type: Date, default: Date.now },
       },
     ],
+    seenBy: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
   },
   { timestamps: true },
 );

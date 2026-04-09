@@ -5,6 +5,7 @@ import {
   getAllPrescriptionsController,
   getDispenseHistoryController,
   getPatientAllPrescriptionsController,
+  markAsSeenPrescriptionsController,
   searchMedicineSuggestionsController,
 } from "../controllers/prescriptionController.ts";
 import { requiredAuthMiddleware } from "../middlewares/requiredTokenMiddleware.ts";
@@ -23,6 +24,11 @@ router.get(
   "/patient/fetch-all",
   requiredAuthMiddleware,
   getPatientAllPrescriptionsController,
+);
+router.put(
+  "/mark-as-seen",
+  requiredAuthMiddleware,
+  markAsSeenPrescriptionsController,
 );
 
 export default router;
