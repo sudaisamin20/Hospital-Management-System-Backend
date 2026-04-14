@@ -722,28 +722,3 @@ export const updateDoctorProfileController = async (req, res) => {
     });
   }
 };
-
-export const getDoctorNotificationsController = async (req, res) => {
-  try {
-    const doctorId = req.user.doctor.id;
-    const notifications = await NotificationModel.find({
-      userId: doctorId,
-    }).populate("aptId");
-    if (notifications.length === 0) {
-      return res
-        .status(404)
-        .json({ success: false, message: "No notification founded!" });
-    }
-    return res.status(200).json({
-      success: true,
-      message: "Doctor notifications fetched successfully!",
-      notifications,
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Internal Server Error",
-      error: error.message,
-    });
-  }
-};

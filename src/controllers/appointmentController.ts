@@ -4,8 +4,6 @@ import ReceptionistModel from "../models/receptionistModel.ts";
 import { generateHmsId } from "../utils/generateId.ts";
 import { io } from "../index.ts";
 import { emitNotification } from "../utils/emitters.ts";
-import LabOrderModel from "../models/labOrderModel.ts";
-import PrescriptionModel from "../models/prescriptionModel.ts";
 
 interface IAptData {
   id_no: string;
@@ -177,9 +175,10 @@ export const confirmAptStatusController = async (req, res) => {
   try {
     const { id, status, handleBy } = req.body;
     const apt = await AppointmentModel.findById(id)
-      .populate("doctorId", "fullName photo")
+      .populate("doctorId", "fullName photo id_no")
       .populate("departmentId", "name")
-      .populate("patientId", "fullName");
+      .populate("specialistId", "name")
+      .populate("patientId", "fullName id_no email phoneNo");
     if (!apt) {
       return res
         .status(404)
@@ -322,14 +321,12 @@ export const deleteAptController = async (req, res) => {
 };
 
 export const approveResReqController = async (req, res) => {
-  console.log(req.body);
   try {
     const { aptId, date, shift, time, rescheduleStatus, status, recId } =
       req.body;
-    const apt = await AppointmentModel.findById(aptId).populate(
-      "doctorId",
-      "fullName photo",
-    );
+    const apt = await AppointmentModel.findById(aptId)
+      .populate("doctorId", "fullName photo")
+      .populate("patientId", "-password");
     if (!apt) {
       return res
         .status(404)
@@ -347,11 +344,66 @@ export const approveResReqController = async (req, res) => {
     apt.rescheduledBy = recId;
     await apt.save();
 
-    await NotificationModel.create({
+    const not = await NotificationModel.create({
       userId: apt.patientId._id,
       title: "Appointment Rescheduled",
       notificationType: "reschedule_approved",
-      message: `Your appointment with Dr. ${apt.doctorId.fullName} has been rescheduled to ${apt.aptDate.toISOString().split("T")[0]} at ${apt.appointmentTime}.`,
+      message: `Your appointment with Dr. ${apt.doctorId.fullName} has been rescheduled from ${apt.oldAptDate.toLocaleDateString(
+        "en-US",
+        {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        },
+      )} at ${apt.oldAptTime} to ${apt.aptDate.split("T")[0]} at ${apt.appointmentTime}. See details! If you are not happy with the current changes you can cancel the appointment and book new appointment.`,
+      aptId: apt._id,
+    });
+    const patNot = await NotificationModel.findById(not._id)
+      .populate("aptId")
+      .populate({
+        path: "aptId",
+        populate: [
+          { path: "departmentId", select: "name" },
+          { path: "specialistId", select: "name" },
+          { path: "doctorId", select: "fullName photo id_no" },
+          { path: "patientId", select: "fullName photo id_no email phoneNo" },
+        ],
+      });
+    io.to(`patient_${apt.patientId._id}`).emit("notification");
+    io.to(`patient_${apt.patientId._id}`).emit("newNotification", {
+      patNot,
+    });
+
+    const not2 = await NotificationModel.create({
+      userId: apt.doctorId._id,
+      title: "Appointment Reschedule Request Approved",
+      notificationType: "reschedule_approved",
+      message: `Your appointment with Patient ${apt.patientId.fullName} on ${apt.oldAptDate?.toLocaleDateString(
+        "en-US",
+        {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        },
+      )} at ${apt.oldAptTime} has been rescheduled to ${apt.aptDate.split("T")[0]} at ${apt.appointmentTime}. See details!`,
+      aptId: apt._id,
+    });
+
+    const docNot = await NotificationModel.findById(not2._id)
+      .populate("aptId")
+      .populate({
+        path: "aptId",
+        populate: [
+          { path: "departmentId", select: "name" },
+          { path: "specialistId", select: "name" },
+          { path: "doctorId", select: "fullName photo id_no" },
+          { path: "patientId", select: "fullName photo id_no email phoneNo" },
+        ],
+      });
+    console.log(apt.doctorId._id);
+    io.to(`doctor_${apt.doctorId._id}`).emit("notification");
+    io.to(`doctor_${apt.doctorId._id}`).emit("newNotification", {
+      docNot,
     });
     return res.status(201).json({
       success: true,
@@ -403,13 +455,17 @@ export const requestrescheduleController = async (req, res) => {
       rescheduleRequestedBy,
       suggestedSlots,
     } = req.body;
-    const apt = await AppointmentModel.findById(id);
+    const apt = await AppointmentModel.findById(id)
+      .populate("patientId", "-password")
+      .populate("doctorId", "fullName id_no email photo phoneNo")
+      .populate("departmentId", "name")
+      .populate("specialistId", "name")
+      .sort({ rescheduleRequestedAt: -1 });
     if (!apt) {
       return res
         .status(404)
         .json({ success: false, message: "Appointment not founded" });
     }
-
     if (apt.status !== "Confirmed") {
       return res.status(400).json({
         success: false,
@@ -418,17 +474,27 @@ export const requestrescheduleController = async (req, res) => {
     }
 
     apt.status = newStatus;
+    apt.rescheduleStatus = "Pending";
     apt.rescheduleReason = rescheduleReason;
     apt.addDetails = addDetails;
     apt.rescheduleRequestedAt = Date.now();
     apt.rescheduleRequestedBy = rescheduleRequestedBy;
     apt.suggestedSlots = suggestedSlots || [];
 
-    await NotificationModel.create({
+    const recNot = await NotificationModel.create({
       userId: apt.handleBy,
-      title: "Reschedule Request Submitted",
+      title: "Reschedule Appointment Request",
       notificationType: "reschedule_requested",
-      message: `Your request to reschedule the appointment with Dr. ${apt.doctorId.fullName} has been submitted.`,
+      message: `Dr. ${apt.doctorId.fullName} wants to reschedule an appointment. Check the details for rescheduling appointment.`,
+      aptId: apt._id,
+    });
+
+    io.to(`receptionist_${apt.handleBy}`).emit("notification");
+    io.to(`receptionist_${apt.handleBy}`).emit("newNotification", {
+      recNot,
+    });
+    io.to(`receptionist_${apt.handleBy}`).emit("resReqApt", {
+      appointment: apt,
     });
 
     await apt.save();
@@ -460,6 +526,62 @@ export const getResReqsAptsController = async (req, res) => {
       success: true,
       message: "Fetched reschedule requested appointments.",
       resReqApts,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+      error,
+    });
+  }
+};
+
+export const rejectResReqAptController = async (req, res) => {
+  try {
+    const { appointmentId, status } = req.body;
+    const apt = await AppointmentModel.findById(appointmentId)
+      .populate("departmentId", "name")
+      .populate("specialistId", "name")
+      .populate("doctorId", "fullName photo")
+      .populate("patientId", "-password");
+    if (!apt) {
+      return res
+        .status(404)
+        .json({ success: false, message: "No appointment founded!" });
+    }
+    apt.rescheduleStatus = status;
+    apt.status = "Confirmed";
+    apt.rejectedAt = new Date(Date.now());
+    await apt.save();
+
+    const not = await NotificationModel.create({
+      userId: apt.doctorId._id,
+      title: "Appointment Reschedule Request Rejected",
+      message: `Your request for rescheduling appointment has been rejected! Appointment ID is ${apt._id}. Make sure you present on the appointment day!`,
+      notificationType: "reschedule_rejected",
+      aptId: apt._id,
+    });
+
+    const docNot = await NotificationModel.findById(not._id)
+      .populate("aptId")
+      .populate({
+        path: "aptId",
+        populate: [
+          { path: "departmentId", select: "name" },
+          { path: "specialistId", select: "name" },
+          { path: "doctorId", select: "fullName photo id_no" },
+          { path: "patientId", select: "fullName photo id_no email phoneNo" },
+        ],
+      });
+
+    io.to(`doctor_${apt.doctorId._id}`).emit("notification");
+    io.to(`doctor_${apt.doctorId._id}`).emit("newNotification", {
+      docNot,
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: "Appointment request for rescheduling has been rejected!",
     });
   } catch (error) {
     res.status(500).json({
@@ -520,80 +642,6 @@ export const setStartedAptTimeController = async (req, res) => {
       message: "Internal Server Error",
       error,
     });
-  }
-};
-
-export const getAllUnreadCountsController = async (req, res) => {
-  try {
-    const user =
-      req.user?.user ||
-      req.user?.receptionist ||
-      req.user?.doctor ||
-      req.user?.labAssistant ||
-      req.user?.pharmacist ||
-      req.user?.patient;
-    const userId = user.id;
-
-    const counts = {
-      appointments: 0,
-      labOrders: 0,
-      prescriptions: 0,
-      notifications: 0,
-    };
-
-    if (user.role === "patient") {
-      counts.notifications = await NotificationModel.countDocuments({
-        userId,
-        seenBy: { $ne: userId },
-      });
-      counts.appointments = await AppointmentModel.countDocuments({
-        patientId: userId,
-        seenBy: { $ne: userId },
-        status: { $in: ["Confirmed", "Completed"] },
-      });
-      counts.labOrders = await LabOrderModel.countDocuments({
-        seenBy: { $ne: userId },
-        "tests.status": "Completed",
-      });
-      counts.prescriptions = await PrescriptionModel.countDocuments({
-        seenBy: { $ne: userId },
-        status: "Dispensed",
-      });
-    }
-
-    if (user.role === "doctor") {
-      counts.appointments = await AppointmentModel.countDocuments({
-        doctorId: userId,
-        seenBy: { $ne: userId },
-        status: "Confirmed",
-      });
-    }
-
-    if (user.role === "receptionist") {
-      counts.appointments = await AppointmentModel.countDocuments({
-        seenBy: { $ne: userId },
-      });
-    }
-
-    if (user.role === "labAssistant") {
-      counts.labOrders = await LabOrderModel.countDocuments({
-        seenBy: { $ne: userId },
-        "tests.status": "Completed",
-      });
-    }
-
-    if (user.role === "pharmacist") {
-      counts.prescriptions = await PrescriptionModel.countDocuments({
-        seenBy: { $ne: userId },
-      });
-    }
-
-    res.status(200).json({
-      success: true,
-      counts,
-    });
-  } catch (err) {
-    res.status(500).json({ success: false });
   }
 };
 

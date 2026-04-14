@@ -3,6 +3,7 @@ import {
   changePasswordController,
   changeProfilePhotoController,
   fetchRelatedDoctorsController,
+  getPatientDashboardDataController,
   getPatientMedicalRecordController,
   getPatientProfileDetails,
   patientLoginController,
@@ -54,6 +55,11 @@ router.put(
   requiredAuthMiddleware,
   upload.single("photo"),
   changeProfilePhotoController,
+);
+router.get(
+  "/fetch/patient-dashboard-data",
+  // requiredAuthMiddleware,
+  getPatientDashboardDataController,
 );
 
 export default router;

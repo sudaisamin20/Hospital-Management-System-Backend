@@ -10,6 +10,7 @@ export const setupSocket = (io: any) => {
         socket.join(`patient_${id}`);
         console.log(`Patient ${id} joined room`);
       } else if (role === "receptionist") {
+        socket.join(`receptionist_${id}`);
         socket.join("receptionists");
         console.log(`Receptionist ${id} joined receptionists room`);
       } else if (role === "labAssistant") {

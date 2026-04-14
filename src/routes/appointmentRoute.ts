@@ -9,10 +9,10 @@ import {
   fetchPatientAllAptsController,
   getAllAppointmentsController,
   getAllPatientNotificationsController,
-  getAllUnreadCountsController,
   getDoctorAppointmentsController,
   getResReqsAptsController,
   markAsSeenAppointmentsController,
+  rejectResReqAptController,
   requestrescheduleController,
   rescheduleAptDateController,
   setStartedAptTimeController,
@@ -40,6 +40,16 @@ router.put("/confirm-apt-status", confirmAptStatusController);
 router.put("/complete-apt-status", completeAptStatusController);
 router.put("/delete-apt", deleteAptController);
 router.put("/approve-reschedule", approveResReqController);
+router.put(
+  "/reject-reschedule-request",
+  requiredAuthMiddleware,
+  rejectResReqAptController,
+);
+router.put(
+  "/mark-as-seen",
+  requiredAuthMiddleware,
+  markAsSeenAppointmentsController,
+);
 
 // Doctor Routes
 router.get("/fetch/doctor-appointments/:id", getDoctorAppointmentsController);
@@ -49,18 +59,6 @@ router.put(
   "/set-start-time",
   requiredAuthMiddleware,
   setStartedAptTimeController,
-);
-
-// Controlled by many
-router.get(
-  "/fetch/unread-count",
-  requiredAuthMiddleware,
-  getAllUnreadCountsController,
-);
-router.put(
-  "/mark-as-seen",
-  requiredAuthMiddleware,
-  markAsSeenAppointmentsController,
 );
 
 export default router;

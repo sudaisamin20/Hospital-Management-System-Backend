@@ -4,11 +4,11 @@ import UserModel from "../models/userModel.ts";
 import jwt from "jsonwebtoken";
 import { generateHmsId } from "../utils/generateId.ts";
 import DoctorModel from "../models/doctorModel.ts";
-import NotificationModel from "../models/notificationModel.ts";
 import AppointmentModel from "../models/appointmentModel.ts";
 import ConsultationModel from "../models/consultationModel.ts";
 import PrescriptionModel from "../models/prescriptionModel.ts";
 import LabOrderModel from "../models/labOrderModel.ts";
+import NotificationModel from "../models/notificationModel.ts";
 
 interface PatientData {
   id_no: string;
@@ -466,6 +466,163 @@ export const changeProfilePhotoController = async (req, res) => {
       success: true,
       message: "Profile photo changed successfully!",
       patient,
+    });
+  } catch (error) {
+    console.error("Error fetching medical records:", error);
+    res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+};
+
+export const getPatientDashboardDataController = async (req, res) => {
+  try {
+    const patientId = req.user.patient.id;
+
+    // ✅ Local today date (IMPORTANT)
+    const now = new Date();
+    const todayDate = `${now.getFullYear()}-${String(
+      now.getMonth() + 1,
+    ).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+
+    // =========================
+    // 📊 STATS
+    // =========================
+
+    const [
+      upcomingAppointments,
+      completedAppointments,
+      prescriptions,
+      labReports,
+    ] = await Promise.all([
+      AppointmentModel.countDocuments({
+        patientId,
+        aptDate: { $gte: todayDate },
+        status: { $nin: ["Cancelled"] },
+      }),
+
+      AppointmentModel.countDocuments({
+        patientId,
+        status: "Completed",
+      }),
+
+      PrescriptionModel.countDocuments({
+        patientId,
+        status: "Dispensed",
+      }),
+
+      LabOrderModel.countDocuments({
+        patientId,
+        "tests.status": "Completed",
+      }),
+    ]);
+
+    const totalMedicalRecords =
+      completedAppointments + prescriptions + labReports;
+
+    // =========================
+    // 📅 UPCOMING APPOINTMENTS
+    // =========================
+
+    const upcomingAppointmentsList = await AppointmentModel.countDocuments({
+      patientId,
+      aptDate: { $gte: todayDate },
+      status: { $in: ["Pending", "Confirmed"] },
+    });
+    // .sort({ aptDate: 1 })
+    // .limit(3)
+    // .populate("doctorId", "fullName");
+
+    // const formattedUpcoming = upcomingAppointmentsList.map((apt) => ({
+    //   _id: apt._id,
+    //   doctorName: apt.doctorId?.fullName || "Unknown",
+    //   date: apt.aptDate,
+    //   time: apt.appointmentTime,
+    //   status: apt.status,
+    //   shift: apt.shift,
+    // }));
+
+    // =========================
+    // ⚡ RECENT ACTIVITY
+    // =========================
+
+    const prescriptionsData = await PrescriptionModel.find({ patientId })
+      .sort({ createdAt: -1 })
+      .limit(2);
+
+    const labTests = await LabOrderModel.find({ patientId })
+      .sort({ createdAt: -1 })
+      .limit(2);
+
+    const appointments = await AppointmentModel.find({
+      patientId,
+      status: "Completed",
+    })
+      .sort({ updatedAt: -1 })
+      .limit(2);
+
+    const recentActivity = [
+      ...appointments.map((apt) => ({
+        _id: apt._id,
+        type: "appointment",
+        message: "Appointment completed",
+        time: apt.updatedAt,
+      })),
+
+      ...prescriptionsData.map((p) => ({
+        _id: p._id,
+        type: "prescription",
+        message: "Prescription added",
+        time: p.createdAt,
+      })),
+
+      ...labTests.map((l) => ({
+        _id: l._id,
+        type: "lab",
+        message: "Lab test updated",
+        time: l.createdAt,
+      })),
+    ]
+      .sort((a, b) => new Date(b.time) - new Date(a.time))
+      .slice(0, 5);
+
+    // =========================
+    // 🔔 NOTIFICATIONS
+    // =========================
+
+    const notificationsRaw = await NotificationModel.find({
+      userId: patientId,
+    })
+      .sort({ createdAt: -1 })
+      .limit(5);
+
+    const notifications = notificationsRaw.map((n) => ({
+      _id: n._id,
+      message: n.message,
+      type: n.notificationType,
+      isRead: n.isRead,
+      time: n.createdAt,
+    }));
+
+    // =========================
+    // ✅ RESPONSE
+    // =========================
+
+    return res.status(200).json({
+      success: true,
+
+      stats: {
+        upcomingAppointments,
+        totalMedicalRecords,
+        activePrescriptions: prescriptions,
+        outstandingBills: 245, // 🔥 static for now (you can add billing model later)
+      },
+
+      upcomingAppointments,
+      recentActivity,
+      notifications,
     });
   } catch (error) {
     console.error("Error fetching medical records:", error);

@@ -2,6 +2,7 @@ import express from "express";
 import { requiredAuthMiddleware } from "../middlewares/requiredTokenMiddleware.ts";
 import {
   deleteNotificationController,
+  getAllUnreadCountsController,
   getNotificationsController,
   markALLAsReadNotificationController,
   markAsReadNotificationController,
@@ -31,6 +32,12 @@ router.put(
   "/mark-as-seen",
   requiredAuthMiddleware,
   markAsSeenNotificationsController,
+);
+
+router.get(
+  "/fetch/unread-count",
+  requiredAuthMiddleware,
+  getAllUnreadCountsController,
 );
 
 export default router;

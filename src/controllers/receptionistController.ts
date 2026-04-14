@@ -3,6 +3,7 @@ import UserModel from "../models/userModel.ts";
 import ReceptionistModel from "../models/receptionistModel.ts";
 import { generateHmsId } from "../utils/generateId.ts";
 import jwt from "jsonwebtoken";
+import AppointmentModel from "../models/appointmentModel.ts";
 
 const JWT_SECRET: string = process.env.JWT_SECRET || "defaultsecret";
 
@@ -128,7 +129,7 @@ export const loginReceptionistController = async (req, res) => {
     }
 
     const payload = {
-      user: {
+      receptionist: {
         id: receptionist._id,
         id_no: receptionist.id_no,
         email: receptionist.email,
@@ -150,6 +151,34 @@ export const loginReceptionistController = async (req, res) => {
         role: receptionist.role,
       },
       token,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+      error,
+    });
+  }
+};
+
+export const markAsSeenResReqAptsController = async (req, res) => {
+  try {
+    const userId = req.user?.user?.id || req.user?.receptionist?.id;
+
+    await AppointmentModel.updateMany(
+      {
+        handleBy: userId,
+        resReqSeen: false,
+        rescheduleRequestedBy: { $exists: true, $ne: null },
+      },
+      {
+        $set: { resReqSeen: true },
+      },
+    );
+
+    return res.status(201).json({
+      success: true,
+      message: "Requests for rescheduling appointments are marked as seen!",
     });
   } catch (error) {
     res.status(500).json({

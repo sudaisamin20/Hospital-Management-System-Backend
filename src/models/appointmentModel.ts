@@ -98,12 +98,17 @@ const appointmentSchema = new mongoose.Schema({
     ref: "receptionist",
   },
   rescheduledAt: { type: Date },
+  rejectedAt: { type: Date },
   seenBy: [
     {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
     },
   ],
+  resReqSeen: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 const AppointmentModel = mongoose.model("Appointments", appointmentSchema);
