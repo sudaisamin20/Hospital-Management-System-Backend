@@ -35,6 +35,7 @@ export const patientRegisterController = async (req, res): Promise<any> => {
       });
     }
 
+    // mGtI0RSnDYDTvbBX mongodb+srv://sudaisamin126_db_user:mGtI0RSnDYDTvbBX@hmscluster0.mpjcu1z.mongodb.net/
     const hashedPassword = await bcrypt.hash(patientData.password, 10);
 
     let id_no = generateHmsId("PAT", 5);
@@ -523,28 +524,6 @@ export const getPatientDashboardDataController = async (req, res) => {
       completedAppointments + prescriptions + labReports;
 
     // =========================
-    // 📅 UPCOMING APPOINTMENTS
-    // =========================
-
-    const upcomingAppointmentsList = await AppointmentModel.countDocuments({
-      patientId,
-      aptDate: { $gte: todayDate },
-      status: { $in: ["Pending", "Confirmed"] },
-    });
-    // .sort({ aptDate: 1 })
-    // .limit(3)
-    // .populate("doctorId", "fullName");
-
-    // const formattedUpcoming = upcomingAppointmentsList.map((apt) => ({
-    //   _id: apt._id,
-    //   doctorName: apt.doctorId?.fullName || "Unknown",
-    //   date: apt.aptDate,
-    //   time: apt.appointmentTime,
-    //   status: apt.status,
-    //   shift: apt.shift,
-    // }));
-
-    // =========================
     // ⚡ RECENT ACTIVITY
     // =========================
 
@@ -612,15 +591,13 @@ export const getPatientDashboardDataController = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-
+      message: "Fetched patient dashboard data!",
       stats: {
         upcomingAppointments,
         totalMedicalRecords,
         activePrescriptions: prescriptions,
-        outstandingBills: 245, // 🔥 static for now (you can add billing model later)
+        outstandingBills: 245,
       },
-
-      upcomingAppointments,
       recentActivity,
       notifications,
     });
